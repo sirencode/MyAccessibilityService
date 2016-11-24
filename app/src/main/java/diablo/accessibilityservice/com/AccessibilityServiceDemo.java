@@ -2,20 +2,14 @@ package diablo.accessibilityservice.com;
 
 import android.accessibilityservice.AccessibilityService;
 import android.app.KeyguardManager;
-import android.app.Notification;
-import android.app.PendingIntent;
 import android.content.Context;
-import android.content.Intent;
 import android.os.Build;
 import android.os.PowerManager;
 import android.support.annotation.RequiresApi;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
-
-import java.util.List;
-
+import static android.R.attr.name;
 import static android.content.ContentValues.TAG;
 
 /**
@@ -25,19 +19,45 @@ import static android.content.ContentValues.TAG;
 public class AccessibilityServiceDemo extends AccessibilityService {
 
     private static final String TGA = "AccessibilityServiceDemo";
-    private String curentDistrict = "";
-    private String name = "";
+    private int currentType = 0;
+    private static final int NORMAL = 0;
+    private static final int DELETE = 1;
+    private static final int ALERT = 2;
+    private AccessibilityNodeInfoUtil util;
+
+
+    public FriendBean getFriendBean() {
+        return friendBean;
+    }
+
+    public void setFriendBean(FriendBean friendBean) {
+        this.friendBean = friendBean;
+    }
+
+    public boolean isCanGetInfo() {
+        return canGetInfo;
+    }
+
+    public void setCanGetInfo(boolean canGetInfo) {
+        this.canGetInfo = canGetInfo;
+    }
+
+    private FriendBean friendBean;
+    private boolean canGetInfo = false;
+
+    public int getCurrentType() {
+        return currentType;
+    }
+
+    public void setCurrentType(int currentType) {
+        this.currentType = currentType;
+    }
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        util = new AccessibilityNodeInfoUtil(this);
         Log.i(TAG, "onServiceConnected");
-//        AccessibilityServiceInfo serviceInfo = new AccessibilityServiceInfo();
-//        serviceInfo.eventTypes = AccessibilityEvent.TYPES_ALL_MASK;
-//        serviceInfo.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
-//        serviceInfo.packageNames = new String[]{"com.tencent.mm"};
-//        serviceInfo.notificationTimeout=100;
-//        setServiceInfo(serviceInfo);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN)
@@ -49,124 +69,58 @@ public class AccessibilityServiceDemo extends AccessibilityService {
         Log.i(TAG, "Source Class:" + event.getClassName() + ""); // 事件源的类名
         Log.i(TAG, "Description:" + event.getContentDescription() + ""); // 事件源描述
         Log.i(TAG, "Event Type(int):" + eventType + "");
+
+        if (util == null){
+            return;
+        }
+
         switch (eventType) {
             case AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED:// 通知栏事件
                 String content = "";
-                content = event.getText().get(0) + "";
-                name = content.substring(0, content.indexOf("请求添加你为朋友"));
+                if (!event.getText().isEmpty() && !TextUtils.isEmpty(event.getText().get(0))) {
+                    content = event.getText().get(0) + "";
+                    String name = content.substring(0, content.indexOf(AccessibilityNodeInfoUtil.NOTIFICATION_FILTRATE_TEXT));
+                    friendBean = new FriendBean(name);
+                }
                 Log.i(TAG, "event type:通知栏事件:" + name);
-                if (content.endsWith("请求添加你为朋友")) {
+                if (content.endsWith(AccessibilityNodeInfoUtil.NOTIFICATION_FILTRATE_TEXT)) {
                     setScreenOn();
-                    openAppByNotification(event);
+                    util.openAppByNotification(event);
                 }
                 break;
             case AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED://窗体状态改变
                 Log.i(TAG, "event type:窗体状态改变");
-                if (atNewFrendUI(event)) {
-                    findAndPerformActionButton(name);
-                } else if (atNewFrendInfoUI(event)) {
-                    getNewFrendInfo(getRootInActiveWindow());
+                if (getFriendBean() == null) {
+                    return;
                 }
-                break;
-            case AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED://View获取到焦点
-                Log.i(TAG, "event type:View获取到焦点");
-                break;
-            case AccessibilityEvent.TYPE_GESTURE_DETECTION_START:
-                Log.i(TAG, "event type:TYPE_VIEW_ACCESSIBILITY_FOCUSED");
-                break;
-            case AccessibilityEvent.TYPE_GESTURE_DETECTION_END:
-                Log.i(TAG, "event type:TYPE_GESTURE_DETECTION_END");
-                break;
-            case AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED:
-                Log.i(TAG, "event type:TYPE_WINDOW_CONTENT_CHANGED");
-                break;
-            case AccessibilityEvent.TYPE_VIEW_CLICKED:
-                Log.i(TAG, "event type:TYPE_VIEW_CLICKED");
-                break;
-            case AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED:
-                Log.i(TAG, "event type:TYPE_VIEW_TEXT_CHANGED");
-                break;
-            case AccessibilityEvent.TYPE_VIEW_SCROLLED:
-                Log.i(TAG, "event type:TYPE_VIEW_SCROLLED");
-                break;
-            case AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED:
-                Log.i(TAG, "event type:TYPE_VIEW_TEXT_SELECTION_CHANGED");
+                if (TextUtils.isEmpty(getFriendBean().getFriendName())) {
+                    return;
+                }
+                if (util.atNewFrendUI(event)) {
+                    util.clickItemByText(getRootInActiveWindow(),getFriendBean().getFriendName());
+                } else if (util.atNewFrendInfoUI(event)) {
+                    if (!isCanGetInfo()) {
+                        util.clickButtonByText(getRootInActiveWindow(),AccessibilityNodeInfoUtil.ACCEPT_TEXT);
+                        util.clickButtonByText(getRootInActiveWindow(),AccessibilityNodeInfoUtil.SEND_MESSAGE_TEXT);
+                    }else if (getCurrentType() == ALERT){
+                        util.back2Home();
+                    } else {
+                        util.getNewFrendInfo(getRootInActiveWindow());
+                    }
+                } else if (util.atChattingUI(event)) {
+                    util.cliclkNewFrendIcon(getRootInActiveWindow());
+                } else if (util.atMoreUI(event)) {
+                    util.clickItemByText(getRootInActiveWindow(),AccessibilityNodeInfoUtil.DELETE_TEXT);
+                } else if (util.atDeletePopWindowUI(event)) {
+                    util.clickButtonByText(getRootInActiveWindow(),AccessibilityNodeInfoUtil.DELETE_TEXT);
+                    util.back2Home();
+                } else if (util.atBZUI(event)) {
+                    util.setBZInfo(getRootInActiveWindow());
+                }
                 break;
             default:
                 Log.i(TAG, "no listen event");
         }
-    }
-
-    /**
-     * 获取地区信息
-     *
-     * @param root
-     */
-    @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN)
-    private void getNewFrendInfo(AccessibilityNodeInfo root) {
-        boolean isDistrictPosition = false;
-        if (root == null)//取得当前激活窗体的根节点
-            return;
-        AccessibilityNodeInfo current = null;
-        for (int i = 0; i < root.getChildCount(); i++) {
-            current = root.getChild(i);
-
-            if (current == null) {
-                continue;
-            }
-
-            if (current.getChildCount() > 0) {
-                getNewFrendInfo(current);
-            }
-
-            if (current.getClassName().equals("android.widget.TextView")) {
-                if (current.getText() == null) {
-                    if (isDistrictPosition) {
-                        curentDistrict = "没有地区信息";
-                        break;
-                    }
-                    continue;
-                }
-                String district = current.getText().toString();
-                if (isDistrictPosition) {
-                    district = TextUtils.isEmpty(district) ? "没有地区信息" : district;
-                    curentDistrict = district;
-                    //// TODO: 获取到昵称和地区信息,发送到服务器
-                    Log.i(TAG, "昵称:" + name + "\n地区:" + curentDistrict);
-                    name = "";
-                    curentDistrict = "";
-                    break;
-                }
-                if (district.equals("地区")) {
-                    isDistrictPosition = true;
-                }
-            }
-        }
-    }
-
-    /**
-     * 判断当前是否是在新朋友界面
-     *
-     * @param event
-     * @return
-     */
-    private boolean atNewFrendUI(AccessibilityEvent event) {
-        return event.getClassName().equals("com.tencent.mm.plugin.subapp.ui.friend.FMessageConversationUI");
-    }
-
-    /**
-     * 判断当前是否是在新好友详细信息界面
-     *
-     * @param event
-     * @return
-     */
-    private boolean atNewFrendInfoUI(AccessibilityEvent event) {
-        return event.getClassName().equals("com.tencent.mm.plugin.profile.ui.ContactInfoUI");
-    }
-
-    @Override
-    public void onInterrupt() {
-
     }
 
     /**
@@ -195,67 +149,15 @@ public class AccessibilityServiceDemo extends AccessibilityService {
         wl.release();
     }
 
-    /**
-     * 点击新好友信息
-     *
-     * @param text
-     */
-    @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN)
-    private void findAndPerformActionButton(String text) {
-        if (getRootInActiveWindow() == null)//取得当前激活窗体的根节点
-            return;
-        //通过文字找到当前的节点
-        List<AccessibilityNodeInfo> nodes = getRootInActiveWindow().findAccessibilityNodeInfosByText(text);
-        for (int i = 0; i < nodes.size(); i++) {
-            AccessibilityNodeInfo node = nodes.get(i);
-            // 执行点击行为
-            if (node.getClassName().equals("android.widget.TextView")) {
-                node = getClickedNodes(node);
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            }
-        }
+    public void release() {
+        friendBean = null;
+        setCanGetInfo(false);
+        setCurrentType(NORMAL);
     }
 
-    /**
-     * 点击好友查看详细信息
-     *
-     * @param nodeInfo
-     * @return
-     */
-    private AccessibilityNodeInfo getClickedNodes(AccessibilityNodeInfo nodeInfo) {
-        if (nodeInfo.isClickable()) {
-            return nodeInfo;
-        } else {
-            return getClickedNodes(nodeInfo.getParent());
-        }
+    @Override
+    public void onInterrupt() {
+
     }
 
-    /**
-     * 回到系统桌面
-     */
-    private void back2Home() {
-        Intent home = new Intent(Intent.ACTION_MAIN);
-
-        home.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        home.addCategory(Intent.CATEGORY_HOME);
-
-        startActivity(home);
-    }
-
-    /**
-     * 打开微信
-     *
-     * @param event 事件
-     */
-    private void openAppByNotification(AccessibilityEvent event) {
-        if (event.getParcelableData() != null && event.getParcelableData() instanceof Notification) {
-            Notification notification = (Notification) event.getParcelableData();
-            try {
-                PendingIntent pendingIntent = notification.contentIntent;
-                pendingIntent.send();
-            } catch (PendingIntent.CanceledException e) {
-                e.printStackTrace();
-            }
-        }
-    }
 }
